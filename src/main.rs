@@ -25,6 +25,8 @@ enum Commands {
     Shell,
     /// sync project to the remote server only
     Sync,
+    /// print the config file path
+    Config,
     /// manage remote servers
     Server {
         #[command(subcommand)]
@@ -69,6 +71,14 @@ fn main() -> Result<()> {
         Some(Commands::Run(args)) => run_cmd(&args),
         Some(Commands::Shell) => shell(),
         Some(Commands::Sync) => sync_only(),
+        Some(Commands::Config) => {
+            let path = Config::path()?;
+            println!("{}", path.display());
+            if !path.exists() {
+                eprintln!("(not created yet; run: rdev server add <name> <host>)");
+            }
+            Ok(())
+        }
         Some(Commands::Server { action }) => server(action.unwrap_or(ServerCmd::Ls)),
     }
 }

@@ -42,8 +42,22 @@ pub fn validate_root(root: &str) -> Result<()> {
 
 impl Config {
     pub fn path() -> Result<PathBuf> {
-        let dir = dirs::config_dir().context("cannot locate config dir")?;
-        Ok(dir.join("rdev").join("config.toml"))
+        // XDG-style on all platforms: $XDG_CONFIG_HOME/rdev, else ~/.config/rdev;
+        // fall back to the legacy dirs::config_dir() location if a config already exists there
+        let base = std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .filter(|p| !p.as_os_str().is_empty())
+            .or_else(|| dirs::home_dir().map(|h| h.join(".config")))
+            .context("cannot locate config dir")?;
+        let path = base.join("rdev").join("config.toml");
+        if !path.exists() {
+            if let Some(legacy) = dirs::config_dir().map(|d| d.join("rdev").join("config.toml")) {
+                if legacy.exists() {
+                    return Ok(legacy);
+                }
+            }
+        }
+        Ok(path)
     }
 
     pub fn load() -> Result<Self> {
