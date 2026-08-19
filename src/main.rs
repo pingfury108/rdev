@@ -23,6 +23,8 @@ struct Cli {
 enum Commands {
     /// sync project and open a remote shell in the project dir
     Shell,
+    /// sync project and run a script from stdin in the project dir (e.g. rdev sh <<'EOF' ... EOF)
+    Sh,
     /// sync project to the remote server only
     Sync,
     /// print the config file path
@@ -70,6 +72,7 @@ fn main() -> Result<()> {
         }
         Some(Commands::Run(args)) => run_cmd(&args),
         Some(Commands::Shell) => shell(),
+        Some(Commands::Sh) => sh(),
         Some(Commands::Sync) => sync_only(),
         Some(Commands::Config) => {
             let path = Config::path()?;
@@ -109,6 +112,15 @@ fn sync_only() -> Result<()> {
     let server = cfg.current_server()?;
     let proj = project::detect()?;
     sync::push(server, &proj)
+}
+
+fn sh() -> Result<()> {
+    let cfg = Config::load()?;
+    let server = cfg.current_server()?;
+    let proj = project::detect()?;
+    sync::push(server, &proj)?;
+    let code = ssh::sh(server, &proj)?;
+    std::process::exit(code);
 }
 
 fn server(cmd: ServerCmd) -> Result<()> {

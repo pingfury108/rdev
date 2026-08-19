@@ -70,15 +70,31 @@ ssh -t <host> 'mkdir -p <dir> && cd <dir> && exec bash -l'
 
 始终分配 TTY。退出 shell 后本地以 shell 退出码退出。
 
-### 3.3 `rdev sync`
+### 3.3 `rdev sh`
+
+从 stdin 读取一段 shell 脚本，同步后在远端项目目录用 login shell 执行；退出码透传。用于一次执行多条命令（`;`/`&&`/重定向/`nohup ... &` 等），免去 `bash -c '...'` 的嵌套转义：
+
+```bash
+rdev sh <<'EOF'              # heredoc 用引号包裹，本地零展开，原样抵达远端
+rm -f build.log
+nohup ./gradlew assembleDebug > build.log 2>&1 &
+echo started
+EOF
+
+rdev sh < scripts/release.sh # 或直接喂本地脚本文件
+```
+
+不分配 TTY，stdin 经 ssh 透传；mise 项目同样自动包装。
+
+### 3.4 `rdev sync`
 
 只执行 §4 的同步，不执行命令。
 
-### 3.4 `rdev config`
+### 3.5 `rdev config`
 
 打印配置文件路径（`~/.config/rdev/config.toml`）；文件尚不存在时在 stderr 提示引导命令。
 
-### 3.5 `rdev server`（子命令组）
+### 3.6 `rdev server`（子命令组）
 
 | 命令 | 行为 |
 |------|------|
@@ -88,7 +104,7 @@ ssh -t <host> 'mkdir -p <dir> && cd <dir> && exec bash -l'
 | `rdev server rm <name>` | 删除；若删的是 current，current 置空 |
 | `rdev server setup [name]` | 幂等装机：检测/安装 `bash`、`rsync`（按 apt/dnf/yum/pacman/brew 自动选择，sudo 提示密码）、安装 `mise` 到 `~/.local/bin`（免 sudo）；缺省对 current 执行；全程一项一行输出 `ok/missing/FAILED` |
 
-### 3.6 工具链依赖：mise 集成
+### 3.7 工具链依赖：mise 集成
 
 项目工具链（go/JDK/node/cargo...）不由 rdev 管理，委托 [mise](https://mise.jdx.dev)：
 
@@ -122,7 +138,7 @@ ssh <控制连接参数> [-t] <host> \
 
 - **单条连接**：建目录、切换目录、执行合并为一次 SSH
 - **连接复用**：自动注入 `ControlMaster=auto`、`ControlPath=<cache>/rdev/cm-%C`、`ControlPersist=10m`，热路径开销 <50ms；不影响 `~/.ssh/config` 既有配置
-- **login shell**：以配置中探测到的远端 login shell 执行（`<shell> -lc`），保证 PATH 与用户环境配置完整（bash/zsh/fish 均可）；项目含 mise 声明文件时包装为 `mise x --`（见 §3.6）
+- **login shell**：以配置中探测到的远端 login shell 执行（`<shell> -lc`），保证 PATH 与用户环境配置完整（bash/zsh/fish 均可）；项目含 mise 声明文件时包装为 `mise x --`（见 §3.7）
 - **参数安全**：每个参数独立 shell-quote，杜绝转义错误与注入
 - **路径展开**：`~` 前缀不做引号包裹，交由远端 shell 展开
 - **TTY**：本地 stdout 是终端时加 `-t`（支持交互命令与颜色）；管道场景不加

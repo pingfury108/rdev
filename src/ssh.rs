@@ -83,6 +83,21 @@ pub fn shell(server: &Server, proj: &Project) -> Result<i32> {
     wait(&mut c)
 }
 
+/// run a script from stdin in the remote project dir (no -t: stdin flows through)
+pub fn sh(server: &Server, proj: &Project) -> Result<i32> {
+    let dir = shell_path(&server.root, &proj.name, &proj.rel_cwd);
+    let sh = shell_quote(server.shell());
+    let run = if proj.uses_mise() {
+        format!("export PATH=\"$HOME/.local/bin:$PATH\" && exec mise x -- {sh} -l")
+    } else {
+        format!("exec {sh} -l")
+    };
+    let script = format!("mkdir -p {dir} && cd {dir} && {run}");
+    let mut c = base_cmd(&server.host)?;
+    c.arg(script);
+    wait(&mut c)
+}
+
 pub fn probe(host: &str) -> bool {
     remote_ok(host, "true")
 }

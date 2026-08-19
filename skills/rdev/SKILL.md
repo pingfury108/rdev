@@ -34,7 +34,20 @@ rdev server ls
 ```bash
 rdev <cmd>...                  # 主路径：rsync 增量同步 → 远端 login shell 执行 → 退出码透传
 rdev shell                     # 同步后进入远端项目目录的交互 shell（调试/手动操作首选）
+rdev sh                        # 同步后从 stdin 读一段脚本在远端执行（多命令/重定向/后台任务用）
 rdev sync                      # 只同步不执行
+```
+
+多命令脚本用 `rdev sh` + heredoc，**零转义**（不要再包 `bash -c '...'`）：
+
+```bash
+rdev sh <<'EOF'                # 'EOF' 带引号：本地不展开，$?、&&、> 原样到远端
+rm -f build.log build.done
+nohup ./gradlew assembleDebug > build.log 2>&1 &
+echo started
+EOF
+
+rdev sh < scripts/release.sh  # 本地脚本文件也可直接喂
 ```
 
 远程目录自动推导为 `root/<本地项目目录名>`（在 git 子目录执行时以仓库根为源、cd 到对应子目录），无需任何项目级配置。
