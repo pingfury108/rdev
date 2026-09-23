@@ -1,8 +1,16 @@
 [package]
-name = "rdev"
+name = "rdev-cli"
 version = "0.1.0"
 edition = "2021"
 description = "Remote dev proxy: run local commands on a remote server"
+license = "MIT OR Apache-2.0"
+keywords = ["remote", "ssh", "dev", "build", "rsync"]
+categories = ["command-line-utilities", "development-tools"]
+readme = "README.md"
+
+[[bin]]
+name = "rdev"
+path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

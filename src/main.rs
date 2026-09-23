@@ -3,6 +3,7 @@ mod project;
 mod setup;
 mod ssh;
 mod sync;
+mod task;
 
 use anyhow::{bail, Context, Result};
 use clap::{CommandFactory, Parser, Subcommand};
@@ -15,6 +16,9 @@ use config::{validate_root, Config, Server};
     about = "remote dev proxy: run commands on a remote server"
 )]
 struct Cli {
+    /// skip the pre-run sync
+    #[arg(long, global = true)]
+    no_sync: bool,
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -29,6 +33,29 @@ enum Commands {
     Sync,
     /// print the config file path
     Config,
+    /// pull a file/dir from the remote project dir
+    Pull {
+        /// path relative to the remote project dir
+        path: String,
+        /// local destination (default: same relative path in the local project)
+        dest: Option<String>,
+    },
+    /// start a background task on the remote (log: .rdev/task.log)
+    Start {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true, required = true)]
+        cmd: Vec<String>,
+    },
+    /// show the latest background task log
+    Logs {
+        /// follow the log (like tail -f)
+        #[arg(short, long)]
+        follow: bool,
+        /// number of lines to show
+        #[arg(short = 'n', long, default_value = "100")]
+        lines: u32,
+    },
+    /// show the latest background task status
+    Status,
     /// manage remote servers
     Server {
         #[command(subcommand)]
@@ -70,9 +97,9 @@ fn main() -> Result<()> {
             Cli::command().print_help()?;
             Ok(())
         }
-        Some(Commands::Run(args)) => run_cmd(&args),
-        Some(Commands::Shell) => shell(),
-        Some(Commands::Sh) => sh(),
+        Some(Commands::Run(args)) => run_cmd(&args, cli.no_sync),
+        Some(Commands::Shell) => shell(cli.no_sync),
+        Some(Commands::Sh) => sh(cli.no_sync),
         Some(Commands::Sync) => sync_only(),
         Some(Commands::Config) => {
             let path = Config::path()?;
@@ -83,43 +110,77 @@ fn main() -> Result<()> {
             Ok(())
         }
         Some(Commands::Server { action }) => server(action.unwrap_or(ServerCmd::Ls)),
+        Some(Commands::Pull { path, dest }) => pull(&path, dest.as_deref()),
+        Some(Commands::Start { cmd }) => start(&cmd, cli.no_sync),
+        Some(Commands::Logs { follow, lines }) => logs(follow, lines),
+        Some(Commands::Status) => status(),
     }
 }
 
-fn run_cmd(args: &[String]) -> Result<()> {
+/// load config + detect project; shared by all project-scoped commands
+fn ctx() -> Result<(Server, project::Project)> {
+    let cfg = Config::load()?;
+    Ok((cfg.current_server()?.clone(), project::detect()?))
+}
+
+fn run_cmd(args: &[String], no_sync: bool) -> Result<()> {
     if args.is_empty() {
         bail!("no command given");
     }
-    let cfg = Config::load()?;
-    let server = cfg.current_server()?;
-    let proj = project::detect()?;
-    sync::push(server, &proj)?;
-    let code = ssh::exec(server, &proj, args)?;
+    let (server, proj) = ctx()?;
+    if !no_sync {
+        sync::push(&server, &proj)?;
+    }
+    let code = ssh::exec(&server, &proj, args)?;
     std::process::exit(code);
 }
 
-fn shell() -> Result<()> {
-    let cfg = Config::load()?;
-    let server = cfg.current_server()?;
-    let proj = project::detect()?;
-    sync::push(server, &proj)?;
-    let code = ssh::shell(server, &proj)?;
+fn shell(no_sync: bool) -> Result<()> {
+    let (server, proj) = ctx()?;
+    if !no_sync {
+        sync::push(&server, &proj)?;
+    }
+    let code = ssh::shell(&server, &proj)?;
     std::process::exit(code);
 }
 
 fn sync_only() -> Result<()> {
-    let cfg = Config::load()?;
-    let server = cfg.current_server()?;
-    let proj = project::detect()?;
-    sync::push(server, &proj)
+    let (server, proj) = ctx()?;
+    sync::push(&server, &proj)
 }
 
-fn sh() -> Result<()> {
-    let cfg = Config::load()?;
-    let server = cfg.current_server()?;
-    let proj = project::detect()?;
-    sync::push(server, &proj)?;
-    let code = ssh::sh(server, &proj)?;
+fn sh(no_sync: bool) -> Result<()> {
+    let (server, proj) = ctx()?;
+    if !no_sync {
+        sync::push(&server, &proj)?;
+    }
+    let code = ssh::sh(&server, &proj)?;
+    std::process::exit(code);
+}
+
+fn pull(path: &str, dest: Option<&str>) -> Result<()> {
+    let (server, proj) = ctx()?;
+    sync::pull(&server, &proj, path, dest)
+}
+
+fn start(cmd: &[String], no_sync: bool) -> Result<()> {
+    let (server, proj) = ctx()?;
+    if !no_sync {
+        sync::push(&server, &proj)?;
+    }
+    let code = task::start(&server, &proj, cmd)?;
+    std::process::exit(code);
+}
+
+fn logs(follow: bool, lines: u32) -> Result<()> {
+    let (server, proj) = ctx()?;
+    let code = task::logs(&server, &proj, lines, follow)?;
+    std::process::exit(code);
+}
+
+fn status() -> Result<()> {
+    let (server, proj) = ctx()?;
+    let code = task::status(&server, &proj)?;
     std::process::exit(code);
 }
 

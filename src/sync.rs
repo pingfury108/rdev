@@ -19,19 +19,13 @@ pub fn push(server: &Server, proj: &Project) -> Result<()> {
     let dir = ssh::shell_path(&server.root, &proj.name, Path::new(""));
     let target = format!("{}:{}", server.host, dir);
 
-    let transport = std::iter::once("ssh".to_string())
-        .chain(ssh::control_args()?)
-        .map(|a| ssh::shell_quote(&a))
-        .collect::<Vec<_>>()
-        .join(" ");
-
     let mut c = Command::new("rsync");
     c.arg("-az");
     for pat in excludes(&proj.root) {
         c.arg(format!("--exclude={pat}"));
     }
     c.arg("-e")
-        .arg(transport)
+        .arg(transport()?)
         .arg(format!("--rsync-path=mkdir -p {dir} && rsync"))
         .arg(format!("{}/", proj.root.display()))
         .arg(&target);
@@ -42,6 +36,44 @@ pub fn push(server: &Server, proj: &Project) -> Result<()> {
         anyhow::bail!("rsync failed ({status})");
     }
     Ok(())
+}
+
+/// pull a file/dir from the remote project dir (explicit path: no excludes applied)
+pub fn pull(server: &Server, proj: &Project, path: &str, dest: Option<&str>) -> Result<()> {
+    let remote = ssh::shell_path(&server.root, &proj.name, Path::new(path));
+    let target = format!("{}:{}", server.host, remote);
+    let dest_path = match dest {
+        Some(d) => d.to_string(),
+        None => {
+            let p = proj.root.join(path);
+            if let Some(parent) = p.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            p.to_string_lossy().into_owned()
+        }
+    };
+
+    let mut c = Command::new("rsync");
+    c.arg("-az")
+        .arg("-e")
+        .arg(transport()?)
+        .arg(&target)
+        .arg(&dest_path);
+
+    eprintln!("pull {target} -> {dest_path}");
+    let status = c.status().context("failed to spawn rsync")?;
+    if !status.success() {
+        anyhow::bail!("rsync failed ({status})");
+    }
+    Ok(())
+}
+
+fn transport() -> Result<String> {
+    Ok(std::iter::once("ssh".to_string())
+        .chain(ssh::control_args()?)
+        .map(|a| ssh::shell_quote(&a))
+        .collect::<Vec<_>>()
+        .join(" "))
 }
 
 fn excludes(root: &Path) -> Vec<String> {

@@ -50,6 +50,23 @@ EOF
 rdev sh < scripts/release.sh  # 本地脚本文件也可直接喂
 ```
 
+后台构建/长任务用三件套（不要手写 `nohup ... & echo $? > done`）：
+
+```bash
+rdev start ./gradlew assembleDebug   # 同步 + 远端后台启动，立即返回；旧任务在跑则拒绝
+rdev logs -f                         # 实时跟随日志（.rdev/task.log）
+rdev status                          # running / done(exit N)；本地退出码：done→任务退出码，running→2，无任务→3
+```
+
+产物/文件回拉：
+
+```bash
+rdev pull build.log                  # 远端项目目录 → 本地同名位置
+rdev pull app/build/outputs/apk/debug/ ./apk/
+```
+
+连续调试确认代码未变时加 `--no-sync` 跳过同步：`rdev --no-sync go test ./...`。
+
 远程目录自动推导为 `root/<本地项目目录名>`（在 git 子目录执行时以仓库根为源、cd 到对应子目录），无需任何项目级配置。
 
 重型命令优先建议用 rdev 跑：gradle 构建、cargo/go 编译、docker build、大规模测试等；本地 8GB 内存机器尤其如此。

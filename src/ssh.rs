@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use std::io::IsTerminal;
+use std::io::{IsTerminal, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -100,6 +100,19 @@ pub fn sh(server: &Server, proj: &Project) -> Result<i32> {
 
 pub fn probe(host: &str) -> bool {
     remote_ok(host, "true")
+}
+
+/// run a posix sh script on the remote; the script travels via stdin (sh -s) so the
+/// remote login shell never parses it — immune to fish/bash quoting differences
+pub fn run_sh(server: &Server, script: &str) -> Result<i32> {
+    let mut c = base_cmd(&server.host)?;
+    c.arg("sh -s").stdin(Stdio::piped());
+    let mut child = c.spawn().context("failed to spawn ssh")?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(script.as_bytes())?;
+    }
+    let status = child.wait().context("failed to wait for ssh")?;
+    Ok(status.code().unwrap_or(1))
 }
 
 pub fn remote_has(host: &str, cmd: &str) -> bool {
